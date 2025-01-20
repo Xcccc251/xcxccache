@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package xccache;
+option go_package = "./;xccache";
+service XcCache{
+  rpc Get(GetRequest) returns (GetResponse);
+}
+
+message GetRequest {
+  string group = 1;
+  string key = 2;
+}
+
+message GetResponse {
+  bytes value = 1;
+}
