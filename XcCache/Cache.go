@@ -1,7 +1,7 @@
-package xccache
+package XcCache
 
 import (
-	lru "XcCache/Lru"
+	"XcCache/XcCache/Lru"
 	"sync"
 )
 

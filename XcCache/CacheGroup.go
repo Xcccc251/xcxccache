@@ -1,6 +1,7 @@
-package xccache
+package XcCache
 
 import (
+	"errors"
 	"log"
 	"sync"
 )
@@ -9,15 +10,13 @@ type CacheGroup struct {
 	name   string
 	getter Getter //回调函数
 	cache  cache
+	peers  PeerPicker
 }
 
 var mu sync.RWMutex
 var groups = make(map[string]*CacheGroup)
 
 func NewCacheGroup(name string, cacheBytes int64, getter Getter) *CacheGroup {
-	if getter == nil {
-		panic("nil Getter")
-	}
 	mu.Lock()
 	defer mu.Unlock()
 	cg := &CacheGroup{
@@ -48,7 +47,29 @@ func (cg *CacheGroup) Get(key string) (ByteView, error) {
 	return cg.load(key)
 }
 
+func (cg *CacheGroup) RegisterPeers(peers PeerPicker) {
+	if cg.peers != nil {
+		panic("RegisterPeerPicker called more than once")
+	}
+	cg.peers = peers
+}
+
 func (cg *CacheGroup) load(key string) (ByteView, error) {
+	if cg.peers != nil {
+		if peer, ok := cg.peers.PickPeer(key); ok {
+			if value, err := cg.getFromPeer(peer, key); err == nil {
+				return value, nil
+			}
+			log.Println("[CacheGroup] Failed to get from peer")
+		}
+	}
+	return cg.loadLocally(key)
+}
+
+func (cg *CacheGroup) loadLocally(key string) (ByteView, error) {
+	if cg.getter == nil {
+		return ByteView{}, errors.New("no such key")
+	}
 	bytes, err := cg.getter.Get(key)
 	if err != nil {
 		return ByteView{}, err
@@ -56,4 +77,12 @@ func (cg *CacheGroup) load(key string) (ByteView, error) {
 	value := ByteView{b: cloneBytes(bytes)}
 	cg.cache.add(key, value)
 	return value, nil
+}
+
+func (cg *CacheGroup) getFromPeer(peer PeerGetter, key string) (ByteView, error) {
+	bytes, err := peer.Get(cg.name, key)
+	if err != nil {
+		return ByteView{}, err
+	}
+	return ByteView{b: bytes}, nil
 }

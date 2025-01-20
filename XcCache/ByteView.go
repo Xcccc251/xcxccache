@@ -1,4 +1,4 @@
-package xccache
+package XcCache
 
 // 只读
 type ByteView struct {

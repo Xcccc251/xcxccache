@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package xccache;
+
+message Get {
+  string group = 1;
+  string key = 2;
+}

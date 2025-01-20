@@ -1,4 +1,4 @@
-package xccache
+package XcCache
 
 import (
 	"fmt"

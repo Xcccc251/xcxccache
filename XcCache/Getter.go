@@ -1,4 +1,4 @@
-package xccache
+package XcCache
 
 type Getter interface {
 	Get(key string) ([]byte, error)
