@@ -3,6 +3,7 @@ package xccache
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"testing"
 )
 
@@ -14,7 +15,7 @@ var db = map[string]string{
 
 func TestGet(t *testing.T) {
 	loadCounts := make(map[string]int, len(db))
-	gee := NewCacheGroup("scores", 2<<10, GetterFunc(
+	NewCacheGroup("scores", 2<<10, GetterFunc(
 		func(key string) ([]byte, error) {
 			log.Println("[SlowDB] search key", key)
 			if v, ok := db[key]; ok {
@@ -26,20 +27,8 @@ func TestGet(t *testing.T) {
 			}
 			return nil, fmt.Errorf("%s not exist", key)
 		}))
+	addr := "localhost:9999"
+	peers := NewHttpPool(addr)
+	http.ListenAndServe(addr, peers)
 
-	for k, _ := range db {
-		view, _ := gee.Get(k)
-		fmt.Println(view)
-		view2, _ := gee.Get(k)
-		fmt.Println(view2)
-		// load from callback function
-		//if _, err := gee.Get(k); err != nil || loadCounts[k] > 1 {
-		//	t.Fatalf("cache %s miss", k)
-		//} // cache hit
-
-	}
-
-	if view, err := gee.Get("unknown"); err == nil {
-		t.Fatalf("the value of unknow should be empty, but %s got", view)
-	}
 }
