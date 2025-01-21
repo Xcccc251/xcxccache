@@ -95,7 +95,7 @@ func (s *Server) PickPeer(key string) (PeerGetter, bool) {
 
 func (s *Server) Get(ctx context.Context, in *xccache.GetRequest) (*xccache.GetResponse, error) {
 	group, key := in.Group, in.Key
-	log.Printf("[xccache %s] Recv RPC Request - Group: %s,Key: %s", s.addr, group, key)
+	log.Printf("[xccache %s] Recv RPC Request->Get - Group: %s,Key: %s", s.addr, group, key)
 	if key == "" {
 		return nil, fmt.Errorf("key is empty")
 	}
@@ -114,25 +114,29 @@ func (s *Server) Get(ctx context.Context, in *xccache.GetRequest) (*xccache.GetR
 
 func (s *Server) Set(ctx context.Context, in *xccache.SetRequest) (*xccache.SetResponse, error) {
 	group, key, value := in.Group, in.Key, in.Value
+	log.Printf("[xccache %s] Recv RPC Request->Set - Group: %s,Key: %s,Value: %s", s.addr, group, key, string(in.Value))
 	if key == "" {
-		return nil, fmt.Errorf("key is empty")
+		return &xccache.SetResponse{Success: false}, fmt.Errorf("key is empty")
 	}
 	peer := s.peers.Get(key)
-
 	if peer == s.addr {
 		g := GetCacheGroup(group)
-		NewCacheGroup(group, 0, nil)
+		if g == nil {
+			log.Printf("[xccache %s] group %s not found", s.addr, group)
+			NewCacheGroup(group, 0, nil)
+			g = GetCacheGroup(group)
+		}
 		g.Set(key, value)
 		return &xccache.SetResponse{Success: true}, nil
 	}
 
-	isSuccess, err := s.httpGetters[peer].Set(group, key, value)
-	if err != nil {
-		return &xccache.SetResponse{Success: false}, err
-	}
-
-	return &xccache.SetResponse{Success: isSuccess}, nil
-
+	//isSuccess, err := s.httpGetters[peer].Set(group, key, value)
+	//if err != nil {
+	//	return &xccache.SetResponse{Success: false}, err
+	//}
+	//
+	//return &xccache.SetResponse{Success: isSuccess}, nil
+	return &xccache.SetResponse{Success: true}, nil
 }
 
 func (s *Server) StartServer() error {
@@ -154,6 +158,7 @@ func (s *Server) StartServer() error {
 	xccache.RegisterXcCacheServer(grpcServer, s)
 	//注册至etcd
 	go func() {
+		log.Printf("server %s", s.addr)
 		err := etcd.RegisterToEtcd("xccache", s.addr, s.stopCh)
 		if err != nil {
 			log.Fatalf("register to etcd failed: %v", err)

@@ -13,12 +13,17 @@ func AddToEtcd(c *clientv3.Client, leaseId clientv3.LeaseID, service string, add
 	if err != nil {
 		return err
 	}
+	log.Printf("[etcd] add endpoint to manager, key: %s", service+"/"+addr)
 	return em.AddEndpoint(c.Ctx(), service+"/"+addr, endpoints.Endpoint{Addr: addr}, clientv3.WithLease(leaseId))
 }
 
 // 向etcd注册一个服务
 func RegisterToEtcd(service string, addr string, iscancel chan struct{}) error {
-	cli := DefaultClient
+	log.Printf("[%s] start register service\n", addr)
+	cli, err := ClientInit()
+	if err != nil {
+		return fmt.Errorf("create client failed: %v", err)
+	}
 	defer cli.Close()
 	//ctx, _ := context.WithTimeout(context.Background(), time.Second*10)
 	resp, err := cli.Grant(context.Background(), 10)
@@ -26,7 +31,7 @@ func RegisterToEtcd(service string, addr string, iscancel chan struct{}) error {
 		return fmt.Errorf("create lease failed: %v", err)
 	}
 	leaseId := resp.ID //租约id
-
+	log.Printf("[%s] create lease ok, lease id: %d\n", addr, leaseId)
 	err = AddToEtcd(cli, leaseId, service, addr)
 	if err != nil {
 		return fmt.Errorf("add to etcd failed: %v", err)
@@ -37,7 +42,7 @@ func RegisterToEtcd(service string, addr string, iscancel chan struct{}) error {
 	if err != nil {
 		return fmt.Errorf("set keepalive failed: %v", err)
 	}
-
+	log.Printf("[%s] set keepalive ok\n", addr)
 	log.Printf("[%s] register service ok\n", addr)
 
 	for {
@@ -48,7 +53,6 @@ func RegisterToEtcd(service string, addr string, iscancel chan struct{}) error {
 				_, err := cli.Revoke(context.Background(), leaseId)
 				return err
 			}
-			log.Printf("[%s] keepalive ok\n", addr)
 		case <-iscancel:
 			log.Printf("[%s] service closed\n", addr)
 			return nil

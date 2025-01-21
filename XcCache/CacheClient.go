@@ -15,7 +15,10 @@ type cacheClient struct {
 
 func (h *cacheClient) Get(group string, key string) ([]byte, error) {
 	//创建一个etcd client
-	cli := etcd.DefaultClient
+	cli, err := etcd.ClientInit()
+	if err != nil {
+		return nil, err
+	}
 	defer cli.Close()
 	conn, err := etcd.DiscoverFromEtcd(cli, h.serviceName)
 	if err != nil {
@@ -36,7 +39,10 @@ func (h *cacheClient) Get(group string, key string) ([]byte, error) {
 
 func (h *cacheClient) Set(group string, key string, value []byte) (bool, error) {
 	//创建一个etcd client
-	cli := etcd.DefaultClient
+	cli, err := etcd.ClientInit()
+	if err != nil {
+		return false, err
+	}
 	defer cli.Close()
 	conn, err := etcd.DiscoverFromEtcd(cli, h.serviceName)
 	if err != nil {
