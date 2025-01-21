@@ -25,7 +25,7 @@ func TestGRPCSet(t *testing.T) {
 		fmt.Println(err)
 	}
 	defer cli.Close()
-	conn, err := etcd.DiscoverFromEtcd(cli, "xccache/localhost:9999")
+	conn, err := etcd.DiscoverFromEtcd(cli, "xccache/localhost:9001")
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -34,8 +34,8 @@ func TestGRPCSet(t *testing.T) {
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
 	rsp, err := grpcClient.Set(ctx, &xccache.SetRequest{
 		Group: "test",
-		Key:   "test",
-		Value: []byte("Ok?"),
+		Key:   "test1",
+		Value: []byte("testset"),
 	})
 	fmt.Println(rsp.Success)
 }
@@ -46,7 +46,7 @@ func TestGRPCGet(t *testing.T) {
 		fmt.Println(err)
 	}
 	defer cli.Close()
-	conn, err := etcd.DiscoverFromEtcd(cli, "xccache/localhost:9999")
+	conn, err := etcd.DiscoverFromEtcd(cli, "xccache/localhost:9001")
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -55,7 +55,7 @@ func TestGRPCGet(t *testing.T) {
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
 	rsp, err := grpcClient.Get(ctx, &xccache.GetRequest{
 		Group: "test",
-		Key:   "test",
+		Key:   "test1",
 	})
 	fmt.Println(string(rsp.Value))
 }

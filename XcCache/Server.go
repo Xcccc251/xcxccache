@@ -82,6 +82,28 @@ func (s *Server) SetPeers(peers ...string) {
 	}
 }
 
+func (s *Server) DelPeers(peers ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, peer := range peers {
+		if _, ok := s.httpGetters[peer]; ok {
+			delete(s.httpGetters, peer)
+			s.peers.Remove(peer)
+		}
+	}
+}
+
+func (s *Server) AddPeers(peers ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, peer := range peers {
+		if _, ok := s.httpGetters[peer]; !ok {
+			s.httpGetters[peer] = &cacheClient{serviceName: "xccache/" + peer}
+			s.peers.Add(peer)
+		}
+	}
+}
+
 func (s *Server) PickPeer(key string) (PeerGetter, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -119,7 +141,9 @@ func (s *Server) Set(ctx context.Context, in *xccache.SetRequest) (*xccache.SetR
 		return &xccache.SetResponse{Success: false}, fmt.Errorf("key is empty")
 	}
 	peer := s.peers.Get(key)
+
 	if peer == s.addr {
+		log.Printf("[xccache %s] [key: %s] has be stored in peer %s", s.addr, key, peer)
 		g := GetCacheGroup(group)
 		if g == nil {
 			log.Printf("[xccache %s] group %s not found", s.addr, group)
@@ -129,14 +153,13 @@ func (s *Server) Set(ctx context.Context, in *xccache.SetRequest) (*xccache.SetR
 		g.Set(key, value)
 		return &xccache.SetResponse{Success: true}, nil
 	}
+	log.Printf("[xccache %s] [key: %s] should be stored in peer %s", s.addr, key, peer)
+	isSuccess, err := s.httpGetters[peer].Set(group, key, value)
+	if err != nil {
+		return &xccache.SetResponse{Success: false}, err
+	}
 
-	//isSuccess, err := s.httpGetters[peer].Set(group, key, value)
-	//if err != nil {
-	//	return &xccache.SetResponse{Success: false}, err
-	//}
-	//
-	//return &xccache.SetResponse{Success: isSuccess}, nil
-	return &xccache.SetResponse{Success: true}, nil
+	return &xccache.SetResponse{Success: isSuccess}, nil
 }
 
 func (s *Server) StartServer() error {

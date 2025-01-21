@@ -58,9 +58,9 @@ func (cg *CacheGroup) Set(key string, value []byte) {
 }
 
 func (cg *CacheGroup) RegisterPeers(peers PeerPicker) {
-	if cg.peers != nil {
-		panic("RegisterPeerPicker called more than once")
-	}
+	//if cg.peers != nil {
+	//	panic("RegisterPeerPicker called more than once")
+	//}
 	cg.peers = peers
 }
 
