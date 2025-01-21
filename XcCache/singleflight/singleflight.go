@@ -9,12 +9,12 @@ type call struct {
 	val interface{}
 	err error
 }
-type group struct {
+type FlightGroup struct {
 	mu sync.Mutex
 	m  map[string]*call
 }
 
-func (g *group) Do(key string, fn func() (interface{}, error)) (interface{}, error) {
+func (g *FlightGroup) Do(key string, fn func() (interface{}, error)) (interface{}, error) {
 	g.mu.Lock()
 	if g.m == nil {
 		g.m = make(map[string]*call)

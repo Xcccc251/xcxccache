@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	XcCache_Get_FullMethodName = "/xccache.XcCache/Get"
+	XcCache_Set_FullMethodName = "/xccache.XcCache/Set"
 )
 
 // XcCacheClient is the client API for XcCache service.
@@ -27,6 +28,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type XcCacheClient interface {
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
+	Set(ctx context.Context, in *SetRequest, opts ...grpc.CallOption) (*SetResponse, error)
 }
 
 type xcCacheClient struct {
@@ -47,11 +49,22 @@ func (c *xcCacheClient) Get(ctx context.Context, in *GetRequest, opts ...grpc.Ca
 	return out, nil
 }
 
+func (c *xcCacheClient) Set(ctx context.Context, in *SetRequest, opts ...grpc.CallOption) (*SetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetResponse)
+	err := c.cc.Invoke(ctx, XcCache_Set_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // XcCacheServer is the server API for XcCache service.
 // All implementations must embed UnimplementedXcCacheServer
 // for forward compatibility.
 type XcCacheServer interface {
 	Get(context.Context, *GetRequest) (*GetResponse, error)
+	Set(context.Context, *SetRequest) (*SetResponse, error)
 	mustEmbedUnimplementedXcCacheServer()
 }
 
@@ -64,6 +77,9 @@ type UnimplementedXcCacheServer struct{}
 
 func (UnimplementedXcCacheServer) Get(context.Context, *GetRequest) (*GetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Get not implemented")
+}
+func (UnimplementedXcCacheServer) Set(context.Context, *SetRequest) (*SetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Set not implemented")
 }
 func (UnimplementedXcCacheServer) mustEmbedUnimplementedXcCacheServer() {}
 func (UnimplementedXcCacheServer) testEmbeddedByValue()                 {}
@@ -104,6 +120,24 @@ func _XcCache_Get_Handler(srv interface{}, ctx context.Context, dec func(interfa
 	return interceptor(ctx, in, info, handler)
 }
 
+func _XcCache_Set_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(XcCacheServer).Set(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: XcCache_Set_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(XcCacheServer).Set(ctx, req.(*SetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // XcCache_ServiceDesc is the grpc.ServiceDesc for XcCache service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -114,6 +148,10 @@ var XcCache_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Get",
 			Handler:    _XcCache_Get_Handler,
+		},
+		{
+			MethodName: "Set",
+			Handler:    _XcCache_Set_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -4,6 +4,17 @@ package xccache;
 option go_package = "./;xccache";
 service XcCache{
   rpc Get(GetRequest) returns (GetResponse);
+  rpc Set(SetRequest) returns (SetResponse);
+}
+
+message SetRequest {
+  string group = 1;
+  string key = 2;
+  bytes value = 3;
+}
+
+message SetResponse {
+  bool success = 1;
 }
 
 message GetRequest {

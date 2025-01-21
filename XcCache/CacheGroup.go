@@ -1,7 +1,9 @@
 package XcCache
 
 import (
+	"XcCache/XcCache/singleflight"
 	"errors"
+
 	"log"
 	"sync"
 )
@@ -11,6 +13,7 @@ type CacheGroup struct {
 	getter Getter //回调函数
 	cache  cache
 	peers  PeerPicker
+	flight *singleflight.FlightGroup
 }
 
 var mu sync.RWMutex
@@ -23,7 +26,9 @@ func NewCacheGroup(name string, cacheBytes int64, getter Getter) *CacheGroup {
 		name:   name,
 		getter: getter,
 		cache:  cache{cacheBytes: cacheBytes},
+		flight: &singleflight.FlightGroup{},
 	}
+	cg.cache.add("test", ByteView{b: []byte("OK")})
 	groups[name] = cg
 	return cg
 }
@@ -47,6 +52,11 @@ func (cg *CacheGroup) Get(key string) (ByteView, error) {
 	return cg.load(key)
 }
 
+func (cg *CacheGroup) Set(key string, value []byte) {
+	cg.cache.add(key, ByteView{b: value})
+
+}
+
 func (cg *CacheGroup) RegisterPeers(peers PeerPicker) {
 	if cg.peers != nil {
 		panic("RegisterPeerPicker called more than once")
@@ -55,15 +65,21 @@ func (cg *CacheGroup) RegisterPeers(peers PeerPicker) {
 }
 
 func (cg *CacheGroup) load(key string) (ByteView, error) {
-	if cg.peers != nil {
-		if peer, ok := cg.peers.PickPeer(key); ok {
-			if value, err := cg.getFromPeer(peer, key); err == nil {
-				return value, nil
+	view, err := cg.flight.Do(key, func() (interface{}, error) {
+		if cg.peers != nil {
+			if peer, ok := cg.peers.PickPeer(key); ok {
+				if value, err := cg.getFromPeer(peer, key); err == nil {
+					return value, nil
+				}
+				log.Println("[CacheGroup] Failed to get from peer")
 			}
-			log.Println("[CacheGroup] Failed to get from peer")
 		}
+		return cg.loadLocally(key)
+	})
+	if err != nil {
+		return ByteView{}, err
 	}
-	return cg.loadLocally(key)
+	return view.(ByteView), nil
 }
 
 func (cg *CacheGroup) loadLocally(key string) (ByteView, error) {

@@ -2,8 +2,13 @@ package XcCache
 
 import (
 	"XcCache/XcCache/consistentHash"
+	"XcCache/XcCache/etcd"
+	"XcCache/XcCache/xccache"
+	"context"
 	"fmt"
+	"google.golang.org/grpc"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -13,9 +18,12 @@ const defaultBasePath = "/_xccache/"
 const defaultReplicas = 50
 
 type Server struct {
+	xccache.UnimplementedXcCacheServer
+
 	addr        string
+	status      bool
 	basePath    string
-	stopCh      chan error
+	stopCh      chan struct{}
 	mu          sync.Mutex
 	peers       *consistentHash.Map
 	httpGetters map[string]*cacheClient
@@ -27,18 +35,18 @@ func NewServer(addr string) *Server {
 	}
 }
 
-func (p *Server) Log(format string, v ...interface{}) {
-	log.Printf("[Server %s] %s", p.addr, fmt.Sprintf(format, v...))
+func (s *Server) Log(format string, v ...interface{}) {
+	log.Printf("[Server %s] %s", s.addr, fmt.Sprintf(format, v...))
 }
 
-func (p *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if !strings.HasPrefix(r.URL.Path, p.basePath) {
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !strings.HasPrefix(r.URL.Path, s.basePath) {
 		panic("Server serving unexpected path: " + r.URL.Path)
 	}
 
-	p.Log("%s %s", r.Method, r.URL.Path)
+	s.Log("%s %s", r.Method, r.URL.Path)
 
-	parts := strings.SplitN(r.URL.Path[len(p.basePath):], "/", 2)
+	parts := strings.SplitN(r.URL.Path[len(s.basePath):], "/", 2)
 	if len(parts) != 2 {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -63,24 +71,117 @@ func (p *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Write(view.ByteSlice())
 }
 
-func (p *Server) Set(peers ...string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.peers = consistentHash.New(defaultReplicas, nil)
-	p.peers.Add(peers...)
-	p.httpGetters = make(map[string]*cacheClient, len(peers))
+func (s *Server) SetPeers(peers ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.peers = consistentHash.New(defaultReplicas, nil)
+	s.peers.Add(peers...)
+	s.httpGetters = make(map[string]*cacheClient, len(peers))
 	for _, peer := range peers {
-		p.httpGetters[peer] = &cacheClient{serviceName: "xccache/" + peer}
+		s.httpGetters[peer] = &cacheClient{serviceName: "xccache/" + peer}
 	}
 }
 
-func (p *Server) PickPeer(key string) (PeerGetter, bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if peer := p.peers.Get(key); peer != "" && peer != p.addr {
-		p.Log("Pick peer %s", peer)
-		return p.httpGetters[peer], true
+func (s *Server) PickPeer(key string) (PeerGetter, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if peer := s.peers.Get(key); peer != "" && peer != s.addr {
+		s.Log("Pick peer %s", peer)
+		return s.httpGetters[peer], true
 	}
 	return nil, false
 
+}
+
+func (s *Server) Get(ctx context.Context, in *xccache.GetRequest) (*xccache.GetResponse, error) {
+	group, key := in.Group, in.Key
+	log.Printf("[xccache %s] Recv RPC Request - Group: %s,Key: %s", s.addr, group, key)
+	if key == "" {
+		return nil, fmt.Errorf("key is empty")
+	}
+
+	g := GetCacheGroup(group)
+	if g == nil {
+		return nil, fmt.Errorf("group %s not found", group)
+	}
+
+	view, err := g.Get(key)
+	if err != nil {
+		return nil, err
+	}
+	return &xccache.GetResponse{Value: view.ByteSlice()}, nil
+}
+
+func (s *Server) Set(ctx context.Context, in *xccache.SetRequest) (*xccache.SetResponse, error) {
+	group, key, value := in.Group, in.Key, in.Value
+	if key == "" {
+		return nil, fmt.Errorf("key is empty")
+	}
+	peer := s.peers.Get(key)
+
+	if peer == s.addr {
+		g := GetCacheGroup(group)
+		NewCacheGroup(group, 0, nil)
+		g.Set(key, value)
+		return &xccache.SetResponse{Success: true}, nil
+	}
+
+	isSuccess, err := s.httpGetters[peer].Set(group, key, value)
+	if err != nil {
+		return &xccache.SetResponse{Success: false}, err
+	}
+
+	return &xccache.SetResponse{Success: isSuccess}, nil
+
+}
+
+func (s *Server) StartServer() error {
+	s.mu.Lock()
+	if s.status == true {
+		s.mu.Unlock()
+		return fmt.Errorf("server already started")
+	}
+
+	s.status = true
+	s.stopCh = make(chan struct{})
+
+	port := strings.Split(s.addr, ":")[1]
+	lis, err := net.Listen("tcp", ":"+port) // 监听端口
+	if err != nil {
+		return fmt.Errorf("failed to listen: %v", err)
+	}
+	grpcServer := grpc.NewServer()
+	xccache.RegisterXcCacheServer(grpcServer, s)
+	//注册至etcd
+	go func() {
+		err := etcd.RegisterToEtcd("xccache", s.addr, s.stopCh)
+		if err != nil {
+			log.Fatalf("register to etcd failed: %v", err)
+		}
+		close(s.stopCh)
+		err = lis.Close()
+		if err != nil {
+			log.Fatalf("close listener failed: %v", err)
+		}
+		log.Printf("[%s] Revoke service and close tcp socket ok.", s.addr)
+
+	}()
+	s.mu.Unlock()
+	err = grpcServer.Serve(lis)
+	if err != nil {
+		return fmt.Errorf("failed to start server: %v", err)
+	}
+	return nil
+}
+
+func (s *Server) StopServer() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.status == false {
+		return fmt.Errorf("server already stopped")
+	}
+	s.status = false
+	s.stopCh <- struct{}{}
+	close(s.stopCh)
+	return nil
 }

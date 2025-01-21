@@ -17,7 +17,7 @@ func AddToEtcd(c *clientv3.Client, leaseId clientv3.LeaseID, service string, add
 }
 
 // 向etcd注册一个服务
-func RegisterToEtcd(service string, addr string, iscancel chan error) error {
+func RegisterToEtcd(service string, addr string, iscancel chan struct{}) error {
 	cli := DefaultClient
 	defer cli.Close()
 	//ctx, _ := context.WithTimeout(context.Background(), time.Second*10)
@@ -49,9 +49,9 @@ func RegisterToEtcd(service string, addr string, iscancel chan error) error {
 				return err
 			}
 			log.Printf("[%s] keepalive ok\n", addr)
-		case err := <-iscancel:
+		case <-iscancel:
 			log.Printf("[%s] service closed\n", addr)
-			return err
+			return nil
 		case <-cli.Ctx().Done():
 			log.Printf("[%s] service closed\n", addr)
 			return nil

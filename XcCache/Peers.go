@@ -8,4 +8,5 @@ type PeerPicker interface {
 // Get() 方法用于从对应 group 查找缓存值。
 type PeerGetter interface {
 	Get(group string, key string) ([]byte, error)
+	Set(group string, key string, value []byte) (bool, error)
 }
