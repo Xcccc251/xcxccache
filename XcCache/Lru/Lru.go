@@ -1,6 +1,9 @@
 package lru
 
-import "container/list"
+import (
+	"container/list"
+	"log"
+)
 
 type Cache struct {
 	maxBytes int64 //最大内存
@@ -18,6 +21,13 @@ type Cache struct {
 type entry struct {
 	key   string
 	value Value
+}
+
+func (e *entry) GetKey() string {
+	return e.key
+}
+func (e *entry) GetValue() Value {
+	return e.value
 }
 
 type Value interface {
@@ -74,4 +84,17 @@ func (c *Cache) AddOrUpdate(key string, value Value) {
 
 func (c *Cache) Len() int {
 	return c.ll.Len()
+}
+
+func (c *Cache) GetAllList() []*entry {
+	ll := c.ll.Front()
+	nodes := make([]*entry, 0)
+	log.Printf("try get lru entry")
+	log.Printf("lru entry len:%d", c.ll.Len())
+	for e := ll; e != nil; e = e.Next() {
+		nodes = append(nodes, e.Value.(*entry))
+	}
+	log.Printf("get lru entry ok")
+	return nodes
+
 }

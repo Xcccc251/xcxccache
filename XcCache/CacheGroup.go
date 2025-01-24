@@ -2,11 +2,16 @@ package XcCache
 
 import (
 	"XcCache/XcCache/singleflight"
+	"encoding/json"
 	"errors"
-
+	"fmt"
 	"log"
+	"os"
 	"sync"
+	"time"
 )
+
+const snapShotPrefix = "snapShot_"
 
 type CacheGroup struct {
 	name   string
@@ -28,7 +33,12 @@ func NewCacheGroup(name string, cacheBytes int64, getter Getter) *CacheGroup {
 		cache:  cache{cacheBytes: cacheBytes},
 		flight: &singleflight.FlightGroup{},
 	}
-	cg.cache.add("test", ByteView{b: []byte("OK")})
+
+	go func() {
+		cg.loadSnapShot()
+		cg.StartSaveSnapShot(time.Minute * 2)
+	}()
+
 	groups[name] = cg
 	return cg
 }
@@ -101,4 +111,57 @@ func (cg *CacheGroup) getFromPeer(peer PeerGetter, key string) (ByteView, error)
 		return ByteView{}, err
 	}
 	return ByteView{b: bytes}, nil
+}
+
+// DB快照(参考Rdb快照redis database)
+func (cg *CacheGroup) StartSaveSnapShot(duration time.Duration) {
+	ticker := time.NewTicker(duration)
+	go func(ticker *time.Ticker) {
+		defer ticker.Stop()
+		filepath := snapShotPrefix + cg.name + ".json"
+		for range ticker.C {
+			cacheList := cg.cache.getAllList()
+			fmt.Println("cacheList:", cacheList)
+
+			// 打开文件并使用os.O_TRUNC标志位来截断文件内容
+			localJson, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+			if err != nil {
+				log.Println("[CacheGroup] SaveSnapShot error:", err)
+				continue
+			}
+			defer localJson.Close()
+
+			encoder := json.NewEncoder(localJson)
+			if err := encoder.Encode(cacheList); err != nil {
+				log.Println("[CacheGroup] SaveSnapShot error:", err)
+				continue
+			}
+
+			log.Println("[CacheGroup] SaveSnapShot success")
+		}
+	}(ticker)
+}
+
+type Person struct {
+	Name    string `json:"name"`
+	Age     int    `json:"age"`
+	Country string `json:"country"`
+}
+
+func (cg *CacheGroup) loadSnapShot() {
+	bytes, err := os.ReadFile(snapShotPrefix + cg.name + ".json")
+	if err != nil {
+		log.Println("[CacheGroup] loadSnapShot error:", err)
+		return
+	}
+	var cacheList []Entry
+	if err := json.Unmarshal(bytes, &cacheList); err != nil {
+		log.Println("[CacheGroup] loadSnapShot error:", err)
+		return
+	}
+
+	for _, entry := range cacheList {
+		cg.cache.add(entry.Key, ByteView{b: entry.Value})
+	}
+	log.Println("[CacheGroup] loadSnapShot success")
 }
