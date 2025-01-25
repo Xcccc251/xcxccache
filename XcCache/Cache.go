@@ -1,7 +1,7 @@
 package XcCache
 
 import (
-	"XcCache/XcCache/Lru"
+	"XcCache/XcCache/LRU"
 	"encoding/json"
 	"sync"
 )
